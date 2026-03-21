@@ -2,57 +2,71 @@ import serial
 import csv
 import sys
 import time
-import matplotlib.pyplot as plt
-import pandas as pd
 
-# Konfiguracja
-PORT = 'COM3'
-BAUDRATE = 115200
+# ── Konfiguracja ──────────────────────────────────────────────────────────────
+PORT       = 'COM3'
+BAUDRATE   = 115200
 OUTPUT_FILE = 'dane.csv'
+# ─────────────────────────────────────────────────────────────────────────────
 
-# Otwórz port
-try:
-    ser = serial.Serial(PORT, BAUDRATE, timeout=1)
-    print(f"Połączono z {PORT} przy {BAUDRATE} baud.")
-except serial.SerialException as e:
-    print(f"Błąd otwarcia portu {PORT}: {e}")
-    sys.exit(1)
+def open_serial(port: str, baudrate: int) -> serial.Serial:
+    try:
+        ser = serial.Serial(port, baudrate, timeout=1)
+        print(f"[OK] Połączono z {port} @ {baudrate} baud.")
+        return ser
+    except serial.SerialException as e:
+        print(f"[BŁĄD] Nie można otworzyć portu {port}: {e}")
+        sys.exit(1)
 
-# Otwórz plik CSV i zapisz nagłówek
-with open(OUTPUT_FILE, 'w', newline='') as csvfile:
-    writer = csv.writer(csvfile)
+
+def open_csv(filepath: str) -> tuple[csv.writer, object]:
+    f = open(filepath, 'w', newline='', buffering=1)  # buffering=1 = flush co linię
+    writer = csv.writer(f)
     writer.writerow(['timestamp_ms', 'distance_mm', 'session_time_s', 'repetition_count'])
+    f.flush()
+    return writer, f
 
-    print("Zbieranie danych... Wciśnij Ctrl+C, aby zakończyć.")
+
+def parse_line(line: str) -> list[str] | None:
+    """Zwraca listę 4 wartości lub None jeśli linia jest nieprawidłowa."""
+    if not line or not line[0].isdigit():
+        return None
+    parts = line.split(',')
+    if len(parts) != 4:
+        return None
+    return parts
+
+
+def collect(ser: serial.Serial, writer: csv.writer, csvfile) -> None:
+    print("Zbieranie danych... Wciśnij Ctrl+C, aby zakończyć.\n")
+    rows_saved = 0
     try:
         while True:
-            line = ser.readline().decode('utf-8', errors='ignore').strip()
-            if line:
-                # Spodziewamy się 4 kolumn oddzielonych przecinkami
-                if line[0].isdigit():
-                    parts = line.split(',')
-                    if len(parts) == 4:
-                        writer.writerow(parts)
-                        print(f"Zapisano: {line}")
-                    else:
-                        print(f"Nieprawidłowa liczba kolumn: {line}")
-                else:
-                    # Pomijamy inne komunikaty (np. logi startowe)
-                    pass
+            raw = ser.readline().decode('utf-8', errors='ignore').strip()
+            parts = parse_line(raw)
+            if parts:
+                writer.writerow(parts)
+                csvfile.flush()  # natychmiastowy zapis na dysk po każdym wierszu
+                rows_saved += 1
+                print(f"\r[{rows_saved:>5} próbek]  "
+                      f"t={parts[0]} ms  dist={parts[1]} mm  "
+                      f"rep={parts[3]}      ", end='', flush=True)
     except KeyboardInterrupt:
-        print("\nZatrzymano przez użytkownika.")
-    finally:
-        ser.close()
-        print(f"Dane zapisane w pliku {OUTPUT_FILE}")
+        print(f"\n\nZatrzymano. Zapisano {rows_saved} próbek → {OUTPUT_FILE}")
 
-# Opcjonalnie – od razu wyświetl prosty wykres
-try:
-    df = pd.read_csv(OUTPUT_FILE)
-    plt.plot(df['session_time_s'], df['distance_mm'])
-    plt.xlabel('Czas sesji (s)')
-    plt.ylabel('Odległość (mm)')
-    plt.title('Przebieg ćwiczenia')
-    plt.grid()
-    plt.show()
-except Exception as e:
-    print(f"Nie udało się wyświetlić wykresu: {e}")
+
+def main() -> None:
+    ser    = open_serial(PORT, BAUDRATE)
+    writer, csvfile = open_csv(OUTPUT_FILE)
+
+    try:
+        collect(ser, writer, csvfile)
+    finally:
+        csvfile.flush()
+        csvfile.close()
+        ser.close()
+        print(f"Port i plik zamknięte.")
+
+
+if __name__ == '__main__':
+    main()
