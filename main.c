@@ -351,12 +351,12 @@ void Log(void)
       {
         float avgDist = CalculateAverageDistance();
         uint32_t now = HAL_GetTick();
-        uint32_t sessionTime = (now - sessionStartTime) / 1000; // sekundy
+        uint32_t sessionTime = (now - sessionStartTime) / 1000;
 
-        // Wysyłanie danych CSV
-        printf("%lu,%.1f,%lu,%lu\r\n", now, avgDist, sessionTime, repCount);
+        // Zapis CSV – odległość jako liczba całkowita
+        printf("%lu,%lu,%lu,%lu\r\n", now, (uint32_t)avgDist, sessionTime, repCount);
 
-        // Wykrywanie powtórzeń (spadek odległości)
+        // Wykrywanie powtórzeń
         if (lastAvgDistance > 0 && avgDist > 0 && (lastAvgDistance - avgDist) > REP_THRESHOLD_MM)
         {
           if ((now - lastRepTime) > REP_TIMEOUT_MS)
@@ -365,9 +365,7 @@ void Log(void)
             lastRepTime = now;
             printf("Repetition %lu!\r\n", repCount);
 
-            // Włącz buzzer
             BuzzerOn();
-            // Mignięcie diodą LD2
             HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
             HAL_Delay(50);
             HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
