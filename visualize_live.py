@@ -6,13 +6,12 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.gridspec import GridSpec
 
-# ── Konfiguracja ──────────────────────────────────────────────────────────────
+# Konfiguracja
 CSV_FILE      = 'dane.csv'
 REFRESH_MS    = 300        # co ile ms odświeżać wykres
 MAX_POINTS    = 300        # ile ostatnich próbek pokazywać na żywym wykresie
-# ─────────────────────────────────────────────────────────────────────────────
 
-# ── Setup figury ──────────────────────────────────────────────────────────────
+# Setup figury
 fig = plt.figure(figsize=(12, 6))
 fig.suptitle("Live – czujnik odległości", fontsize=14, fontweight='bold')
 gs = GridSpec(2, 2, figure=fig, hspace=0.45, wspace=0.35)
@@ -32,7 +31,7 @@ TEXT_COLOR   = '#cdd6f4'
 plt.rcParams.update({'text.color': TEXT_COLOR, 'axes.labelcolor': TEXT_COLOR,
                      'xtick.color': TEXT_COLOR, 'ytick.color': TEXT_COLOR,
                      'axes.edgecolor': '#45475a'})
-# ─────────────────────────────────────────────────────────────────────────────
+
 
 
 def load_csv(filepath: str) -> pd.DataFrame | None:
@@ -50,7 +49,7 @@ def load_csv(filepath: str) -> pd.DataFrame | None:
 def update(frame):
     df = load_csv(CSV_FILE)
 
-    # ── Wykres distance_mm ────────────────────────────────────────────────────
+    # Wykres distance_mm
     ax_dist.cla()
     ax_dist.set_facecolor('#1e1e2e')
     ax_dist.set_title("Odległość w czasie (ostatnie próbki)", color=TEXT_COLOR, fontsize=10)
@@ -68,7 +67,7 @@ def update(frame):
 
     ax_dist.grid(True, color='#45475a', linewidth=0.5, alpha=0.5)
 
-    # ── Licznik powtórzeń ─────────────────────────────────────────────────────
+    # Licznik powtórzeń
     ax_rep.cla()
     ax_rep.set_facecolor('#1e1e2e')
     ax_rep.set_title("Powtórzenia", color=TEXT_COLOR, fontsize=10)
@@ -87,7 +86,7 @@ def update(frame):
         ax_rep.text(0.5, 0.5, "–", ha='center', va='center',
                     fontsize=56, color='#45475a', transform=ax_rep.transAxes)
 
-    # ── Statystyki bieżącego powtórzenia ──────────────────────────────────────
+    # Statystyki bieżącego powtórzenia
     ax_stats.cla()
     ax_stats.set_facecolor('#1e1e2e')
     ax_stats.set_title("Bieżące powt. – statystyki", color=TEXT_COLOR, fontsize=10)

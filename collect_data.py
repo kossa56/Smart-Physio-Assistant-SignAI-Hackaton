@@ -3,11 +3,11 @@ import csv
 import sys
 import time
 
-# ── Konfiguracja ──────────────────────────────────────────────────────────────
+# Konfiguracja
 PORT       = 'COM3'
 BAUDRATE   = 115200
 OUTPUT_FILE = 'dane.csv'
-# ─────────────────────────────────────────────────────────────────────────────
+
 
 def open_serial(port: str, baudrate: int) -> serial.Serial:
     try:
