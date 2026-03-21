@@ -7,7 +7,7 @@ import matplotlib.animation as animation
 from matplotlib.gridspec import GridSpec
 
 # Konfiguracja
-CSV_FILE      = 'dane.csv'
+CSV_FILE      = '../dane.csv'
 REFRESH_MS    = 300        # co ile ms odświeżać wykres
 MAX_POINTS    = 300        # ile ostatnich próbek pokazywać na żywym wykresie
 

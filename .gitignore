@@ -1,1 +1,18 @@
-.idea
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Dane sesji (trzymamy lokalnie, nie w repo)
+dane.csv
+
+# IDE
+.idea/
+.vscode/
+
+# System
+.DS_Store
+Thumbs.db
