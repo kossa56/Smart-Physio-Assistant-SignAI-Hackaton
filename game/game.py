@@ -90,13 +90,16 @@ class SerialReader(threading.Thread):
             self.connected = True
         except serial.SerialException as e:
             self.error = str(e)
+            print(f"[SERIAL ERROR] {e}")
             return
 
+        print(f"[CSV] Próba zapisu do: {self.csv_file}")
         with open(self.csv_file, 'w', newline='', buffering=1) as f:
             writer = csv.writer(f)
             writer.writerow(['timestamp_ms', 'distance_mm',
                              'session_time_s', 'repetition_count'])
             f.flush()
+            print("[CSV] Plik otwarty, czekam na dane...")
             while self.running:
                 try:
                     raw = ser.readline().decode('utf-8', errors='ignore').strip()
@@ -104,6 +107,7 @@ class SerialReader(threading.Thread):
                         continue
                     parts = raw.split(',')
                     if len(parts) != 4:
+                        print(f"[CSV] Zła liczba kolumn ({len(parts)}): {raw}")
                         continue
                     frame = SensorFrame(
                         int(parts[0]), float(parts[1]),
@@ -112,6 +116,7 @@ class SerialReader(threading.Thread):
                     writer.writerow([frame.timestamp_ms, frame.distance_mm,
                                      frame.session_time_s, frame.repetition_count])
                     f.flush()
+                    print(f"[CSV] Zapisano: {raw}")
                     while not self.queue.empty():
                         try: self.queue.get_nowait()
                         except queue.Empty: break
@@ -246,16 +251,37 @@ def connecting_screen(screen, clock, fonts, reader):
 
 def calibration_screen(screen, clock, fonts, data_queue):
     font_big, font_mid, font_sm = fonts
+    font_huge = pygame.font.SysFont('Arial', 72, bold=True)
+
     steps = [
-        ('KALIBRACJA  1 / 2', 'Ustaw ciało w GÓRNEJ pozycji', 'max'),
-        ('KALIBRACJA  2 / 2', 'Ustaw ciało w DOLNEJ pozycji', 'min'),
+        {
+            'key':        'max',
+            'step':       '1 / 2',
+            'label':      'GÓRA',
+            'icon_arrow': 'UP',
+            'instruction': 'Ustaw ciało / rękę w najwyższej pozycji',
+            'accent':     C_GREEN,
+            'bg_accent':  (230, 248, 238),   # bardzo jasna zieleń
+        },
+        {
+            'key':        'min',
+            'step':       '2 / 2',
+            'label':      'DÓŁ',
+            'icon_arrow': 'DOWN',
+            'instruction': 'Ustaw ciało / rękę w najniższej pozycji',
+            'accent':     C_AMBER,
+            'bg_accent':  (252, 244, 224),   # bardzo jasny amber
+        },
     ]
     results    = {}
-    btn_rect   = pygame.Rect(SCREEN_W//2 - 110, SCREEN_H - 130, 220, 50)
+    btn_rect   = pygame.Rect(SCREEN_W//2 - 120, SCREEN_H - 120, 240, 54)
     last_frame = None
 
-    for title, instruction, key in steps:
+    for step in steps:
         confirmed = False
+        accent    = step['accent']
+        bg_accent = step['bg_accent']
+
         while not confirmed:
             clock.tick(FPS)
             mx, my = pygame.mouse.get_pos()
@@ -267,7 +293,7 @@ def calibration_screen(screen, clock, fonts, data_queue):
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                     pygame.quit(); sys.exit()
                 if event.type == pygame.MOUSEBUTTONDOWN and hovered and last_frame:
-                    results[key] = last_frame.distance_mm
+                    results[step['key']] = last_frame.distance_mm
                     confirmed = True
 
             try:
@@ -275,25 +301,60 @@ def calibration_screen(screen, clock, fonts, data_queue):
             except queue.Empty:
                 pass
 
+            # Tło podzielone – górna część w kolorze kroku
             screen.fill(C_BG)
-            t = font_big.render(title, True, C_TEXT)
-            screen.blit(t, (SCREEN_W//2 - t.get_width()//2, 80))
-            inst = font_mid.render(instruction, True, C_TEXT)
-            screen.blit(inst, (SCREEN_W//2 - inst.get_width()//2, 170))
-            sub = font_sm.render("Kliknij ZATWIERDŹ gdy jesteś gotowy", True, C_MUTED)
-            screen.blit(sub, (SCREEN_W//2 - sub.get_width()//2, 215))
+            pygame.draw.rect(screen, bg_accent, (0, 0, SCREEN_W, 200))
 
+            # Pasek kroku u góry
+            step_lbl = font_sm.render(f"KALIBRACJA  {step['step']}", True, C_MUTED)
+            screen.blit(step_lbl, (SCREEN_W//2 - step_lbl.get_width()//2, 18))
+
+            # Duży napis GÓRA / DÓŁ
+            big_lbl = font_huge.render(step['label'], True, accent)
+            screen.blit(big_lbl, (SCREEN_W//2 - big_lbl.get_width()//2, 50))
+
+            # Strzałka
+            cx = SCREEN_W//2
+            if step['icon_arrow'] == 'UP':
+                pts = [(cx, 148), (cx - 28, 185), (cx + 28, 185)]
+            else:
+                pts = [(cx, 188), (cx - 28, 151), (cx + 28, 151)]
+            pygame.draw.polygon(screen, accent, pts)
+
+            # Separator
+            pygame.draw.line(screen, C_TRACK, (40, 210), (SCREEN_W - 40, 210), 1)
+
+            # Instrukcja
+            inst = font_mid.render(step['instruction'], True, C_TEXT)
+            screen.blit(inst, (SCREEN_W//2 - inst.get_width()//2, 230))
+
+            sub = font_sm.render("Kliknij ZATWIERDŹ gdy jesteś gotowy", True, C_MUTED)
+            screen.blit(sub, (SCREEN_W//2 - sub.get_width()//2, 270))
+
+            # Aktualna wartość czujnika — duża i wyraźna
             if last_frame:
-                lbl = font_sm.render("Aktualna odległość:", True, C_MUTED)
-                screen.blit(lbl, (SCREEN_W//2 - lbl.get_width()//2, 320))
-                val = font_big.render(f"{last_frame.distance_mm:.0f} mm", True, C_BALL)
-                screen.blit(val, (SCREEN_W//2 - val.get_width()//2, 360))
+                box_rect = pygame.Rect(SCREEN_W//2 - 130, 310, 260, 90)
+                pygame.draw.rect(screen, (255, 255, 255), box_rect, border_radius=12)
+                pygame.draw.rect(screen, accent, box_rect, width=2, border_radius=12)
+
+                dist_lbl = font_sm.render("Aktualna odległość", True, C_MUTED)
+                screen.blit(dist_lbl, (SCREEN_W//2 - dist_lbl.get_width()//2, 322))
+
+                dist_val = font_big.render(f"{last_frame.distance_mm:.0f} mm", True, accent)
+                screen.blit(dist_val, (SCREEN_W//2 - dist_val.get_width()//2, 348))
             else:
                 nd = font_sm.render("Oczekiwanie na dane z czujnika...", True, C_AMBER)
-                screen.blit(nd, (SCREEN_W//2 - nd.get_width()//2, 360))
+                screen.blit(nd, (SCREEN_W//2 - nd.get_width()//2, 350))
 
-            draw_button(screen, btn_rect, "ZATWIERDŹ", font_mid,
-                        hovered, disabled=(last_frame is None))
+            # Przycisk
+            btn_color = (C_BTN_HOVER if hovered else accent) if last_frame else C_MUTED
+            pygame.draw.rect(screen, btn_color, btn_rect, border_radius=10)
+            btn_lbl = font_mid.render("ZATWIERDŹ", True, C_BTN_TEXT)
+            screen.blit(btn_lbl, (
+                btn_rect.x + (btn_rect.w - btn_lbl.get_width()) // 2,
+                btn_rect.y + (btn_rect.h - btn_lbl.get_height()) // 2,
+            ))
+
             pygame.display.flip()
 
     d_min = min(results['min'], results['max'])
@@ -303,9 +364,23 @@ def calibration_screen(screen, clock, fonts, data_queue):
     return d_min, d_max
 
 
+def show_session_stats(csv_file: str, score: int, dist_min: float, dist_max: float):
+    """Odpala session_stats.py jako osobny proces."""
+    import subprocess
+    subprocess.Popen([
+        sys.executable, 'session_stats.py',
+        csv_file,
+        str(score),
+        str(dist_min),
+        str(dist_max),
+    ])
+
+
 def game_over_screen(screen, clock, fonts, score):
     font_big, font_mid, font_sm = fonts
-    btn = pygame.Rect(SCREEN_W//2 - 110, 440, 220, 50)
+    btn_play  = pygame.Rect(SCREEN_W//2 - 120, 420, 240, 50)
+    btn_stats = pygame.Rect(SCREEN_W//2 - 120, 484, 240, 50)
+
     while True:
         clock.tick(FPS)
         mx, my = pygame.mouse.get_pos()
@@ -313,15 +388,23 @@ def game_over_screen(screen, clock, fonts, score):
             if event.type == pygame.QUIT:
                 pygame.quit(); sys.exit()
             if event.type == pygame.MOUSEBUTTONDOWN:
-                if btn.collidepoint(mx, my):
-                    return   # wróć do kalibracji
+                if btn_play.collidepoint(mx, my):
+                    return 'play'
+                if btn_stats.collidepoint(mx, my):
+                    return 'stats'
+
         screen.fill(C_BG)
+
         t1 = font_big.render("GAME OVER", True, C_RED)
         t2 = font_mid.render(f"Wynik: {score} pkt", True, C_TEXT)
-        screen.blit(t1, (SCREEN_W//2 - t1.get_width()//2, 260))
-        screen.blit(t2, (SCREEN_W//2 - t2.get_width()//2, 340))
-        draw_button(screen, btn, "ZAGRAJ JESZCZE RAZ", font_sm,
-                    btn.collidepoint(mx, my))
+        screen.blit(t1, (SCREEN_W//2 - t1.get_width()//2, 240))
+        screen.blit(t2, (SCREEN_W//2 - t2.get_width()//2, 300))
+
+        draw_button(screen, btn_play,  "ZAGRAJ JESZCZE RAZ", font_sm,
+                    btn_play.collidepoint(mx, my))
+        draw_button(screen, btn_stats, "POKAŻ STATYSTYKI",   font_sm,
+                    btn_stats.collidepoint(mx, my))
+
         pygame.display.flip()
 
 
@@ -519,7 +602,9 @@ def main():
         final_score = game_screen(
             screen, clock, fonts, data_queue, dist_min, dist_max
         )
-        game_over_screen(screen, clock, fonts, final_score)
+        action = game_over_screen(screen, clock, fonts, final_score)
+        if action == 'stats':
+            show_session_stats(CSV_FILE, final_score, dist_min, dist_max)
 
     reader.stop()
     pygame.quit()
