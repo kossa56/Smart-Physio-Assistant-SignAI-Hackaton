@@ -9,7 +9,7 @@ import math
 import subprocess
 from dataclasses import dataclass
 
-# ── Konfiguracja ──────────────────────────────────────────────────────────────
+# Konfiguracja
 PORT         = 'COM3'
 BAUDRATE     = 115200
 CSV_FILE     = '../dane.csv'
@@ -25,9 +25,8 @@ DANGER_TIME_MAX = 7.0     # max czas na ucieczkę
 SAFE_TIME_MIN   = 3.0     # min czas spokoju między falami
 SAFE_TIME_MAX   = 5.0
 TRACK_X      = SCREEN_W - 100   # pozycja toru kulki
-# ─────────────────────────────────────────────────────────────────────────────
 
-# ── Kolory ────────────────────────────────────────────────────────────────────
+# Kolory
 C_BG          = (242, 234, 224)
 C_TEXT        = (26,  26,  26 )
 C_MUTED       = (122, 111, 102)
@@ -47,7 +46,6 @@ ZONE_SAFE     = (230, 245, 235, 180)   # zielonawa (RGBA)
 ZONE_WARN     = (255, 240, 180, 180)   # żółtawa
 ZONE_DANGER   = (255, 180, 180, 180)   # czerwonawa
 ZONE_BORDER   = (180, 165, 150)
-# ─────────────────────────────────────────────────────────────────────────────
 
 
 @dataclass
@@ -67,7 +65,7 @@ class Particle:
     size: float
 
 
-# ── Serial Reader ─────────────────────────────────────────────────────────────
+# Serial Reader
 class SerialReader(threading.Thread):
     def __init__(self, port, baudrate, data_queue, csv_file):
         super().__init__(daemon=True)
@@ -120,7 +118,7 @@ class SerialReader(threading.Thread):
         self.running = False
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# Helpers
 def draw_button(surface, rect, text, font, hovered=False, disabled=False):
     color = C_MUTED if disabled else (C_BTN_HOVER if hovered else C_BTN)
     pygame.draw.rect(surface, color, rect, border_radius=8)
@@ -193,7 +191,7 @@ def zone_label(idx):
     return ["GÓRA", "GÓR. ŚRODEK", "DOL. ŚRODEK", "DÓŁ"][idx]
 
 
-# ── Ekrany ────────────────────────────────────────────────────────────────────
+# Ekrany
 def connecting_screen(screen, clock, fonts, reader):
     import time
     font_big, font_mid, font_sm = fonts
@@ -316,7 +314,7 @@ def game_over_screen(screen, clock, fonts, score):
         pygame.display.flip()
 
 
-# ── Główna gra ────────────────────────────────────────────────────────────────
+# Główna gra
 def game_screen(screen, clock, fonts, data_queue, dist_min, dist_max):
     font_big, font_mid, font_sm = fonts
     font_zone = pygame.font.SysFont('Arial', 13, bold=True)
@@ -332,7 +330,7 @@ def game_screen(screen, clock, fonts, data_queue, dist_min, dist_max):
     last_dist  = None
     particles  = []
 
-    # ── Stan stref ────────────────────────────────────────────────────────────
+    # Stan stref
     # Każda strefa: 'safe' | 'warning' | 'danger'
     zone_states  = ['safe'] * N_ZONES
     zone_timer   = 0.0        # czas do następnej zmiany fazy (sekundy)
@@ -340,6 +338,7 @@ def game_screen(screen, clock, fonts, data_queue, dist_min, dist_max):
     danger_zones = []         # indeksy aktualnie niebezpiecznych stref
     warn_zones   = []
     danger_left  = 0.0        # ile czasu zostało na ucieczkę
+    danger_total = 1.0        # całkowity czas fazy danger (do paska)
     invincible   = 0          # klatki nietykalności
 
     # Rozpocznij od fazy spokoju
@@ -375,7 +374,7 @@ def game_screen(screen, clock, fonts, data_queue, dist_min, dist_max):
         trail.append((TRACK_X, int(ball_y)))
         if len(trail) > TRAIL_LEN: trail.pop(0)
 
-        # ── Logika faz ───────────────────────────────────────────────────────
+        # Logika faz
         zone_timer -= dt
 
         if phase == 'safe' and zone_timer <= 0:
@@ -389,8 +388,9 @@ def game_screen(screen, clock, fonts, data_queue, dist_min, dist_max):
             phase        = 'danger'
             danger_zones = warn_zones
             warn_zones   = []
-            danger_left  = random.uniform(DANGER_TIME_MIN, DANGER_TIME_MAX)
-            zone_timer   = danger_left
+            danger_total = random.uniform(DANGER_TIME_MIN, DANGER_TIME_MAX)
+            danger_left  = danger_total
+            zone_timer   = danger_total
 
         elif phase == 'danger':
             danger_left = zone_timer
@@ -413,7 +413,7 @@ def game_screen(screen, clock, fonts, data_queue, dist_min, dist_max):
 
         if invincible > 0: invincible -= 1
 
-        # ── Rysowanie ────────────────────────────────────────────────────────
+        # Rysowanie
         screen.fill(C_BG)
 
         # Strefy – kolorowe prostokąty
@@ -455,9 +455,7 @@ def game_screen(screen, clock, fonts, data_queue, dist_min, dist_max):
             screen.blit(txt, (SCREEN_W//2 - txt.get_width()//2, SCREEN_H - 40))
 
         elif phase == 'danger':
-            elapsed  = random.uniform(DANGER_TIME_MIN, DANGER_TIME_MAX) - danger_left
-            total    = random.uniform(DANGER_TIME_MIN, DANGER_TIME_MAX)
-            bar_frac = max(0.0, danger_left / max(total, 0.01))
+            bar_frac = max(0.0, danger_left / danger_total)
             bar_w    = int(bar_frac * (TRACK_X - 40))
             pygame.draw.rect(screen, C_RED, (20, SCREEN_H - 20, bar_w, 8), border_radius=4)
             txt = font_sm.render(f"UCIEKAJ!  {danger_left:.1f}s", True, C_RED)
@@ -502,7 +500,6 @@ def game_screen(screen, clock, fonts, data_queue, dist_min, dist_max):
     return score
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
 def main():
     pygame.init()
     screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))

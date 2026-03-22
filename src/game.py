@@ -7,17 +7,26 @@ import sys
 import time
 import random
 import math
+import os
 from dataclasses import dataclass, field
 
 # ── Konfiguracja ──────────────────────────────────────────────────────────────
 PORT         = 'COM3'
 BAUDRATE     = 115200
 CSV_FILE     = '../dane.csv'
+RANKING_FILE = '../ranking.csv'
 SCREEN_W     = 700
 SCREEN_H     = 700
 FPS          = 60
-TRACK_X      = SCREEN_W - 120    # pozycja pionowego toru kulki
+TRACK_X      = SCREEN_W - 120
 MAX_LIVES    = 3
+
+# ── Poziomy trudności ─────────────────────────────────────────────────────────
+DIFFICULTIES = {
+    'easy':   {'label': 'EASY',   'spawn_start': 160, 'spawn_min': 90,  'speed_base': 2.5, 'bomb_chance': 0.25, 'spawn_count': 1, 'color': (107, 174, 138)},
+    'medium': {'label': 'MEDIUM', 'spawn_start': 120, 'spawn_min': 60,  'speed_base': 3.5, 'bomb_chance': 0.35, 'spawn_count': 2, 'color': (201, 169, 110)},
+    'hard':   {'label': 'HARD',   'spawn_start':  50, 'spawn_min': 20,  'speed_base': 5.0, 'bomb_chance': 0.50, 'spawn_count': 5, 'color': (200,  80,  80)},
+}
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── Kolory ────────────────────────────────────────────────────────────────────
@@ -376,6 +385,213 @@ def show_session_stats(csv_file: str, score: int, dist_min: float, dist_max: flo
     ])
 
 
+# Ranking
+def load_ranking(filepath: str) -> list[dict]:
+    if not os.path.exists(filepath):
+        return []
+    try:
+        entries = []
+        with open(filepath, newline='', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                entries.append({
+                    'name':       row['name'],
+                    'score':      int(row['score']),
+                    'difficulty': row['difficulty'],
+                    'date':       row['date'],
+                })
+        return sorted(entries, key=lambda x: x['score'], reverse=True)
+    except Exception:
+        return []
+
+
+def save_ranking(filepath: str, name: str, score: int, difficulty: str):
+    exists = os.path.exists(filepath)
+    with open(filepath, 'a', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=['name', 'score', 'difficulty', 'date'])
+        if not exists:
+            writer.writeheader()
+        writer.writerow({
+            'name':       name,
+            'score':      score,
+            'difficulty': difficulty,
+            'date':       time.strftime('%Y-%m-%d %H:%M'),
+        })
+
+
+# Ekran wyboru trudności
+def difficulty_screen(screen, clock, fonts):
+    font_big, font_mid, font_sm = fonts
+    font_huge = pygame.font.SysFont('Arial', 48, bold=True)
+
+    btns = {}
+    btn_w, btn_h = 200, 60
+    ys = {'easy': 280, 'medium': 360, 'hard': 440}
+    for key, y in ys.items():
+        btns[key] = pygame.Rect(SCREEN_W//2 - btn_w//2, y, btn_w, btn_h)
+
+    btn_ranking = pygame.Rect(SCREEN_W//2 - 120, 530, 240, 44)
+
+    while True:
+        clock.tick(FPS)
+        mx, my = pygame.mouse.get_pos()
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit(); sys.exit()
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                pygame.quit(); sys.exit()
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                for key, rect in btns.items():
+                    if rect.collidepoint(mx, my):
+                        return key
+                if btn_ranking.collidepoint(mx, my):
+                    ranking_screen(screen, clock, fonts)
+
+        screen.fill(C_BG)
+        title = font_huge.render("STRIKER STRENGTH", True, C_BALL)
+        screen.blit(title, (SCREEN_W//2 - title.get_width()//2, 140))
+        sub = font_sm.render("Wybierz poziom trudności", True, C_MUTED)
+        screen.blit(sub, (SCREEN_W//2 - sub.get_width()//2, 210))
+
+        for key, rect in btns.items():
+            d      = DIFFICULTIES[key]
+            hov    = rect.collidepoint(mx, my)
+            color  = tuple(min(255, c + 30) for c in d['color']) if hov else d['color']
+            pygame.draw.rect(screen, color, rect, border_radius=10)
+            lbl = font_mid.render(d['label'], True, (255, 255, 255))
+            screen.blit(lbl, (rect.x + (rect.w - lbl.get_width())//2,
+                               rect.y + (rect.h - lbl.get_height())//2))
+
+        draw_button(screen, btn_ranking, "RANKING", font_sm,
+                    btn_ranking.collidepoint(mx, my))
+        pygame.display.flip()
+
+
+# Ekran rankingu
+def ranking_screen(screen, clock, fonts):
+    font_big, font_mid, font_sm = fonts
+    entries  = load_ranking(RANKING_FILE)
+    btn_back = pygame.Rect(SCREEN_W//2 - 100, SCREEN_H - 70, 200, 44)
+
+    diff_colors = {
+        'easy':   DIFFICULTIES['easy']['color'],
+        'medium': DIFFICULTIES['medium']['color'],
+        'hard':   DIFFICULTIES['hard']['color'],
+    }
+
+    while True:
+        clock.tick(FPS)
+        mx, my = pygame.mouse.get_pos()
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT: pygame.quit(); sys.exit()
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE: return
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if btn_back.collidepoint(mx, my): return
+
+        screen.fill(C_BG)
+        t = font_big.render("RANKING", True, C_BALL)
+        screen.blit(t, (SCREEN_W//2 - t.get_width()//2, 30))
+
+        if not entries:
+            nd = font_mid.render("Brak wyników", True, C_MUTED)
+            screen.blit(nd, (SCREEN_W//2 - nd.get_width()//2, 300))
+        else:
+            # Nagłówki
+            y = 90
+            headers = [('#', 40), ('Gracz', 140), ('Wynik', 380), ('Poziom', 490), ('Data', 570)]
+            for h, x in headers:
+                lbl = font_sm.render(h, True, C_MUTED)
+                screen.blit(lbl, (x, y))
+            pygame.draw.line(screen, C_MUTED, (30, y+20), (SCREEN_W-30, y+20), 1)
+            y += 32
+
+            for i, e in enumerate(entries[:12]):
+                row_color = C_AMBER if i == 0 else C_TEXT
+                rank_lbl  = font_sm.render(f"{i+1}.", True, row_color)
+                name_lbl  = font_sm.render(e['name'][:14], True, row_color)
+                score_lbl = font_sm.render(str(e['score']), True, row_color)
+                diff_c    = diff_colors.get(e['difficulty'], C_MUTED)
+                diff_lbl  = font_sm.render(e['difficulty'].upper(), True, diff_c)
+                date_lbl  = font_sm.render(e['date'], True, C_MUTED)
+
+                screen.blit(rank_lbl,  (40,  y))
+                screen.blit(name_lbl,  (140, y))
+                screen.blit(score_lbl, (380, y))
+                screen.blit(diff_lbl,  (490, y))
+                screen.blit(date_lbl,  (570, y))
+                y += 28
+
+        draw_button(screen, btn_back, "WRÓĆ", font_sm, btn_back.collidepoint(mx, my))
+        pygame.display.flip()
+
+
+# Ekran wpisywania nazwy
+def name_entry_screen(screen, clock, fonts, score, difficulty):
+    font_big, font_mid, font_sm = fonts
+    name      = ""
+    max_chars = 12
+    btn_save  = pygame.Rect(SCREEN_W//2 - 110, 460, 220, 50)
+    btn_skip  = pygame.Rect(SCREEN_W//2 - 110, 524, 220, 44)
+    cursor_on = True
+    cursor_t  = 0
+
+    diff_color = DIFFICULTIES[difficulty]['color']
+
+    while True:
+        clock.tick(FPS)
+        cursor_t += 1
+        if cursor_t % 30 == 0:
+            cursor_on = not cursor_on
+        mx, my = pygame.mouse.get_pos()
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT: pygame.quit(); sys.exit()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_RETURN and name.strip():
+                    save_ranking(RANKING_FILE, name.strip(), score, difficulty)
+                    return
+                elif event.key == pygame.K_BACKSPACE:
+                    name = name[:-1]
+                elif event.key == pygame.K_ESCAPE:
+                    return
+                elif len(name) < max_chars and event.unicode.isprintable():
+                    name += event.unicode
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if btn_save.collidepoint(mx, my) and name.strip():
+                    save_ranking(RANKING_FILE, name.strip(), score, difficulty)
+                    return
+                if btn_skip.collidepoint(mx, my):
+                    return
+
+        screen.fill(C_BG)
+
+        t1 = font_big.render("GAME OVER", True, C_RED)
+        t2 = font_mid.render(f"Wynik: {score} pkt", True, C_TEXT)
+        diff_badge = font_sm.render(DIFFICULTIES[difficulty]['label'], True, diff_color)
+        screen.blit(t1, (SCREEN_W//2 - t1.get_width()//2, 80))
+        screen.blit(t2, (SCREEN_W//2 - t2.get_width()//2, 135))
+        screen.blit(diff_badge, (SCREEN_W//2 - diff_badge.get_width()//2, 175))
+
+        prompt = font_sm.render("Wpisz swoje imię do rankingu:", True, C_MUTED)
+        screen.blit(prompt, (SCREEN_W//2 - prompt.get_width()//2, 240))
+
+        # Pole tekstowe
+        input_rect = pygame.Rect(SCREEN_W//2 - 150, 270, 300, 52)
+        pygame.draw.rect(screen, (255, 255, 255), input_rect, border_radius=8)
+        pygame.draw.rect(screen, diff_color, input_rect, width=2, border_radius=8)
+        display_text = name + ('|' if cursor_on else ' ')
+        inp_lbl = font_mid.render(display_text, True, C_TEXT)
+        screen.blit(inp_lbl, (input_rect.x + 12,
+                               input_rect.y + (input_rect.h - inp_lbl.get_height())//2))
+
+        draw_button(screen, btn_save, "ZAPISZ DO RANKINGU", font_sm,
+                    btn_save.collidepoint(mx, my),
+                    disabled=not name.strip())
+        draw_button(screen, btn_skip, "POMIŃ", font_sm,
+                    btn_skip.collidepoint(mx, my))
+        pygame.display.flip()
+
+
 def game_over_screen(screen, clock, fonts, score):
     font_big, font_mid, font_sm = fonts
     btn_play  = pygame.Rect(SCREEN_W//2 - 120, 420, 240, 50)
@@ -394,22 +610,20 @@ def game_over_screen(screen, clock, fonts, score):
                     return 'stats'
 
         screen.fill(C_BG)
-
         t1 = font_big.render("GAME OVER", True, C_RED)
         t2 = font_mid.render(f"Wynik: {score} pkt", True, C_TEXT)
         screen.blit(t1, (SCREEN_W//2 - t1.get_width()//2, 240))
         screen.blit(t2, (SCREEN_W//2 - t2.get_width()//2, 300))
-
         draw_button(screen, btn_play,  "ZAGRAJ JESZCZE RAZ", font_sm,
                     btn_play.collidepoint(mx, my))
         draw_button(screen, btn_stats, "POKAŻ STATYSTYKI",   font_sm,
                     btn_stats.collidepoint(mx, my))
-
         pygame.display.flip()
 
 
-def game_screen(screen, clock, fonts, data_queue, dist_min, dist_max):
+def game_screen(screen, clock, fonts, data_queue, dist_min, dist_max, difficulty='medium'):
     font_big, font_mid, font_sm = fonts
+    diff = DIFFICULTIES[difficulty]
 
     ball_y    = float(SCREEN_H // 2)
     target_y  = ball_y
@@ -425,9 +639,10 @@ def game_screen(screen, clock, fonts, data_queue, dist_min, dist_max):
     objects: list[FlyingObj] = []
     particles: list[Particle] = []
 
-    spawn_timer   = 0
-    spawn_interval = 120    # klatki między spawnami
-    obj_speed_base = 3.0
+    spawn_timer    = 0
+    spawn_interval = diff['spawn_start']
+    obj_speed_base = diff['speed_base']
+    bomb_chance    = diff['bomb_chance']
 
     flash_timer   = 0        # czerwony flash przy utracie życia
     invincible    = 0        # klatki nietykalności po trafieniu
@@ -470,11 +685,12 @@ def game_screen(screen, clock, fonts, data_queue, dist_min, dist_max):
         spawn_timer += 1
         if spawn_timer >= spawn_interval:
             spawn_timer = 0
-            spawn_interval = max(50, spawn_interval - 1)   # rośnie trudność
-            kind  = 'bomb' if random.random() < 0.35 else 'coin'
-            speed = obj_speed_base + random.uniform(0, 2.0)
-            y_pos = random.uniform(100, SCREEN_H - 100)
-            objects.append(FlyingObj(x=0, y=y_pos, speed=speed, kind=kind))
+            spawn_interval = max(diff['spawn_min'], spawn_interval - 1)
+            for _ in range(diff['spawn_count']):
+                kind  = 'bomb' if random.random() < bomb_chance else 'coin'
+                speed = obj_speed_base + random.uniform(0, 2.0)
+                y_pos = random.uniform(100, SCREEN_H - 100)
+                objects.append(FlyingObj(x=0, y=y_pos, speed=speed, kind=kind))
 
         # Ruch obiektów
         for obj in objects:
@@ -512,7 +728,7 @@ def game_screen(screen, clock, fonts, data_queue, dist_min, dist_max):
         if lives <= 0:
             return score
 
-        # ── Rysowanie ────────────────────────────────────────────────────────
+        # Rysowanie
         if flash_timer > 0:
             screen.fill(C_FLASH)
             flash_timer -= 1
@@ -576,7 +792,7 @@ def game_screen(screen, clock, fonts, data_queue, dist_min, dist_max):
     return score
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+
 def main():
     pygame.init()
     screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
@@ -596,12 +812,14 @@ def main():
     connecting_screen(screen, clock, fonts, reader)
 
     while True:
+        difficulty = difficulty_screen(screen, clock, fonts)
         dist_min, dist_max = calibration_screen(
             screen, clock, fonts, data_queue
         )
         final_score = game_screen(
-            screen, clock, fonts, data_queue, dist_min, dist_max
+            screen, clock, fonts, data_queue, dist_min, dist_max, difficulty
         )
+        name_entry_screen(screen, clock, fonts, final_score, difficulty)
         action = game_over_screen(screen, clock, fonts, final_score)
         if action == 'stats':
             show_session_stats(CSV_FILE, final_score, dist_min, dist_max)
